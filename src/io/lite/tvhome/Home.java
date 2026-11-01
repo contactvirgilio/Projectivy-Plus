@@ -82,6 +82,7 @@ public class Home extends Activity {
     int loadGen;
     int tileW, tileH;
     BroadcastReceiver pkgReceiver;
+    FlowBackground bg;
 
     // ---------------------------------------------------------------- lifecycle
 
@@ -113,6 +114,7 @@ public class Home extends Activity {
     protected void onResume() {
         super.onResume();
         resumed = true;
+        bg.start();
         if (dirty) reload();
         grid.requestFocus();
     }
@@ -121,6 +123,7 @@ public class Home extends Activity {
     protected void onPause() {
         super.onPause();
         resumed = false;
+        bg.stop();
         if (moving >= 0) endMove();
     }
 
@@ -156,8 +159,10 @@ public class Home extends Activity {
         int padH = dp(48), gridPad = dp(14), hSpace = dp(26), vSpace = dp(18);
 
         FrameLayout root = new FrameLayout(this);
-        root.setBackground(new GradientDrawable(GradientDrawable.Orientation.TL_BR,
-                new int[]{0xFF0A0C11, 0xFF141924, 0xFF0A0C11}));
+        root.setBackgroundColor(Color.BLACK);
+        bg = new FlowBackground(this);
+        bg.configure(prefs.getInt("bg_palette", 0), prefs.getInt("bg_speed", 1), prefs.getInt("bg_bright", 1));
+        root.addView(bg, new FrameLayout.LayoutParams(-1, -1));
 
         LinearLayout col = new LinearLayout(this);
         col.setOrientation(LinearLayout.VERTICAL);
@@ -175,7 +180,8 @@ public class Home extends Activity {
         TextClock date = new TextClock(this);
         date.setFormat12Hour("EEEE, d MMMM");
         date.setFormat24Hour("EEEE, d MMMM");
-        date.setTextColor(0x99FFFFFF);
+        date.setTextColor(0xCCFFFFFF);
+        date.setShadowLayer(dp(6), 0, dp(1), 0x99000000);
         date.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
         header.addView(date, new LinearLayout.LayoutParams(0, -2, 1));
 
@@ -183,6 +189,7 @@ public class Home extends Activity {
         clock.setFormat12Hour("h:mm");
         clock.setFormat24Hour("HH:mm");
         clock.setTextColor(Color.WHITE);
+        clock.setShadowLayer(dp(8), 0, dp(1), 0x99000000);
         clock.setTextSize(TypedValue.COMPLEX_UNIT_SP, 40);
         clock.setIncludeFontPadding(false);
         header.addView(clock, new LinearLayout.LayoutParams(-2, -2));
@@ -279,6 +286,7 @@ public class Home extends Activity {
         h.card.animate().scaleX(s).scaleY(s).setDuration(120).start();
         h.card.setForeground(focused ? focusRing(moving >= 0 ? ACCENT : Color.WHITE) : null);
         h.caption.setTextColor(focused ? Color.WHITE : 0x00FFFFFF);
+        h.caption.setShadowLayer(focused ? dp(4) : 0, 0, focused ? dp(1) : 0, focused ? 0xAA000000 : 0);
     }
 
     Drawable focusRing(int color) {
@@ -350,7 +358,7 @@ public class Home extends Activity {
             GradientDrawable bg = new GradientDrawable();
             bg.setCornerRadius(dp(10));
             if (pos >= apps.size()) {
-                bg.setColor(0xFF232834);
+                bg.setColor(0xC8232834);
                 h.card.setBackground(bg);
                 h.banner.setVisibility(View.GONE);
                 h.fallback.setVisibility(View.VISIBLE);
@@ -366,7 +374,7 @@ public class Home extends Activity {
                     h.banner.setVisibility(View.VISIBLE);
                     h.fallback.setVisibility(View.GONE);
                 } else {
-                    bg.setColor(a.tint);
+                    bg.setColor((a.tint & 0x00FFFFFF) | 0xD8000000);
                     h.icon.setImageDrawable(a.icon);
                     h.name.setText(a.label);
                     h.banner.setVisibility(View.GONE);
@@ -380,6 +388,7 @@ public class Home extends Activity {
             h.card.setScaleY(sel ? 1.08f : 1f);
             h.card.setForeground(sel ? focusRing(moving >= 0 ? ACCENT : Color.WHITE) : null);
             h.caption.setTextColor(sel ? Color.WHITE : 0x00FFFFFF);
+            h.caption.setShadowLayer(sel ? dp(4) : 0, 0, sel ? dp(1) : 0, sel ? 0xAA000000 : 0);
             if (sel) lastFocused = convert;
             return convert;
         }
@@ -514,51 +523,6 @@ public class Home extends Activity {
         return new AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert);
     }
 
-    // ---------------------------------------------------------------- default launcher
-
-    static final int REQ_HOME_ROLE = 7;
-
-    boolean isDefaultHome() {
-        try {
-            ResolveInfo ri = getPackageManager().resolveActivity(
-                    new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME),
-                    PackageManager.MATCH_DEFAULT_ONLY);
-            return ri != null && ri.activityInfo != null
-                    && getPackageName().equals(ri.activityInfo.packageName);
-        } catch (Exception e) {
-            return false;
-        }
-    }
-
-    void requestDefaultHome() {
-        if (isDefaultHome()) {
-            Toast.makeText(this, "Lite Home is already your default launcher", Toast.LENGTH_SHORT).show();
-            return;
-        }
-        // Android 10+: ask the system for the Home role. Most TV firmware ignores this.
-        if (android.os.Build.VERSION.SDK_INT >= 29) {
-            try {
-                android.app.role.RoleManager rm = getSystemService(android.app.role.RoleManager.class);
-                if (rm != null && rm.isRoleAvailable(android.app.role.RoleManager.ROLE_HOME)) {
-                    startActivityForResult(rm.createRequestRoleIntent(
-                            android.app.role.RoleManager.ROLE_HOME), REQ_HOME_ROLE);
-                    return;
-                }
-            } catch (Exception ignored) { }
-        }
-        showManualHelp();
-    }
-
-    @Override
-    protected void onActivityResult(int req, int res, Intent data) {
-        super.onActivityResult(req, res, data);
-        if (req != REQ_HOME_ROLE) return;
-        if (isDefaultHome())
-            Toast.makeText(this, "Lite Home is now your default launcher", Toast.LENGTH_SHORT).show();
-        else
-            showManualHelp();
-    }
-
     // ---------------------------------------------------------------- override (accessibility)
 
     boolean overrideOn() {
@@ -579,8 +543,8 @@ public class Home extends Activity {
         dialog().setTitle(on ? "Turn off override" : "Override current launcher")
                 .setMessage(on
                         ? "In the next screen open \"Lite Home override\" and switch it off."
-                        : "Lite Home will open whenever the current launcher appears, so the Home "
-                        + "button lands here.\n\nIn the next screen open \"Lite Home override\" and "
+                        : "Catches the remote's Home button and opens Lite Home, whatever launcher "
+                        + "is set as default.\n\nIn the next screen open \"Lite Home override\" and "
                         + "switch it on. Turn off Projectivy's own override first.")
                 .setPositiveButton("Open accessibility", new android.content.DialogInterface.OnClickListener() {
                     @Override public void onClick(android.content.DialogInterface d, int w) {
@@ -603,21 +567,58 @@ public class Home extends Activity {
         dialog().setTitle("Enable from a computer")
                 .setMessage("adb shell settings put secure enabled_accessibility_services "
                         + getPackageName() + "/.HomeOverride\n\n"
-                        + "adb shell settings put secure accessibility_enabled 1")
+                        + "adb shell settings put secure accessibility_enabled 1\n\n"
+                        + "Or make it the real default Home app:\n"
+                        + "adb shell cmd package set-home-activity " + getPackageName() + "/.Home")
                 .setPositiveButton("OK", null)
                 .show();
     }
 
-    void showManualHelp() {
-        String cmd = "adb shell cmd package set-home-activity " + getPackageName() + "/.Home";
-        dialog().setTitle("Set as default launcher")
-                .setMessage("This TV doesn't let apps make themselves the default. "
-                        + "Use \"Override current launcher\" instead, or run this from a computer:\n\n" + cmd)
-                .setPositiveButton("Override instead", new android.content.DialogInterface.OnClickListener() {
-                    @Override public void onClick(android.content.DialogInterface d, int w) { toggleOverride(); }
+    // ---------------------------------------------------------------- personalisation
+
+    static String paletteName(int i) {
+        return i >= 0 && i < FlowBackground.NAMES.length ? FlowBackground.NAMES[i] : "Cycle through all";
+    }
+
+    void applyBackground() {
+        bg.configure(prefs.getInt("bg_palette", 0), prefs.getInt("bg_speed", 1), prefs.getInt("bg_bright", 1));
+        bg.start();
+    }
+
+    void pickBackground() {
+        String[] names = new String[FlowBackground.NAMES.length + 1];
+        for (int i = 0; i < names.length; i++) names[i] = paletteName(i);
+        pickSetting("Background", names, "bg_palette", 0);
+    }
+
+    /** Single-choice list that previews each option live as you move over it; Back restores. */
+    void pickSetting(String title, String[] names, final String key, int def) {
+        final int before = prefs.getInt(key, def);
+        final boolean[] chosen = {false};
+        final AlertDialog d = dialog().setTitle(title)
+                .setSingleChoiceItems(names, before, new android.content.DialogInterface.OnClickListener() {
+                    @Override public void onClick(android.content.DialogInterface di, int which) {
+                        chosen[0] = true;
+                        prefs.edit().putInt(key, which).apply();
+                        applyBackground();
+                        di.dismiss();
+                    }
                 })
-                .setNegativeButton("Close", null)
-                .show();
+                .create();
+        d.setOnDismissListener(new android.content.DialogInterface.OnDismissListener() {
+            @Override public void onDismiss(android.content.DialogInterface di) {
+                if (!chosen[0]) { prefs.edit().putInt(key, before).apply(); applyBackground(); }
+            }
+        });
+        d.show();
+        if (d.getWindow() != null) d.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
+        d.getListView().setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override public void onItemSelected(AdapterView<?> p, View v, int pos, long id) {
+                prefs.edit().putInt(key, pos).apply();
+                applyBackground();
+            }
+            @Override public void onNothingSelected(AdapterView<?> p) { }
+        });
     }
 
     void showOptions(final int pos) {
@@ -625,17 +626,24 @@ public class Home extends Activity {
         if (pos >= apps.size()) {
             final List<String> hiddenPkgs = new ArrayList<>(
                     prefs.getStringSet("hidden", Collections.<String>emptySet()));
-            String[] items = {"Open Android settings",
+            String[] items = {
+                    "Open Android settings",
+                    "Background: " + paletteName(prefs.getInt("bg_palette", 0)),
+                    "Motion: " + FlowBackground.SPEED_NAMES[prefs.getInt("bg_speed", 1)],
+                    "Brightness: " + FlowBackground.BRIGHT_NAMES[prefs.getInt("bg_bright", 1)],
                     "Show hidden apps (" + hiddenPkgs.size() + ")",
                     "Reset app order",
-                    isDefaultHome() ? "Default launcher ✓" : "Set as default launcher",
-                    overrideOn() ? "Override current launcher: ON" : "Override current launcher: OFF"};
+                    "Override Home button: " + (overrideOn() ? "ON" : "OFF")};
             dialog().setTitle("Lite Home").setItems(items, new android.content.DialogInterface.OnClickListener() { @Override public void onClick(android.content.DialogInterface d, int which) {
-                if (which == 0) openSettings();
-                else if (which == 1) showHidden(hiddenPkgs);
-                else if (which == 2) { prefs.edit().remove("order").apply(); reload(); }
-                else if (which == 3) requestDefaultHome();
-                else toggleOverride();
+                switch (which) {
+                    case 0: openSettings(); break;
+                    case 1: pickBackground(); break;
+                    case 2: pickSetting("Motion", FlowBackground.SPEED_NAMES, "bg_speed", 1); break;
+                    case 3: pickSetting("Brightness", FlowBackground.BRIGHT_NAMES, "bg_bright", 1); break;
+                    case 4: showHidden(hiddenPkgs); break;
+                    case 5: prefs.edit().remove("order").apply(); reload(); break;
+                    default: toggleOverride();
+                }
             }}).show();
             return;
         }

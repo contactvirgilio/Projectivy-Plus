@@ -1,13 +1,16 @@
 # Lite Home
 
-A tiny Android TV launcher: one activity, no libraries, no network permission, ~20 KB APK.
+A tiny Android TV launcher: one activity, no libraries, no network permission, ~23 KB APK.
 
 Not affiliated with or based on Projectivy Launcher.
 
+- Flowing animated gradient background: 7 themes (Aurora, Sunset, Ocean, Forest, Ember, Lavender, Midnight)
+  or "Cycle through all", with Motion (Still/Slow/Normal/Fast) and Brightness (Dim/Normal/Bright). Choices preview live.
 - Clock and date, then a grid of your apps (TV banners when the app has one, otherwise its icon on a tinted tile)
 - Settings tile always last
 - Long-press OK (or Menu) on an app: Open, Move, Move to first, Hide, App info, Uninstall
-- Long-press OK on Settings: Android settings, show/unhide hidden apps, reset order
+- Long-press OK on Settings: Android settings, Background, Motion, Brightness, show/unhide hidden apps,
+  reset order, Override Home button
 - Move mode: arrows move the tile, OK or Back to finish
 - Updates itself when apps are installed or removed
 
@@ -19,7 +22,7 @@ adb shell cmd package set-home-activity io.lite.tvhome/.Home
 ```
 
 ### Or: Override current launcher (no adb needed)
-Long-press OK on the Settings tile > **Override current launcher** > Open accessibility > **Lite Home override** > On.
+Long-press OK on the Settings tile > **Override Home button** > Open accessibility > **Lite Home override** > On.
 The service catches the remote's Home button (and, as a fallback, any other launcher's home screen) and opens
 Lite Home instead. Turn off Projectivy's own "Override current launcher" first. It reads no screen content.
 After updating the APK, switch the service off and on again.
