@@ -26,8 +26,24 @@ public class HomeOverride extends AccessibilityService {
     Set<String> homeClasses = new HashSet<>();
     long refreshedAt, lastLaunch;
 
+    /** The running service, so the launcher can open the power menu. Null when switched off. */
+    static volatile HomeOverride instance;
+
+    @Override
+    public void onDestroy() {
+        instance = null;
+        super.onDestroy();
+    }
+
+    @Override
+    public boolean onUnbind(Intent i) {
+        instance = null;
+        return super.onUnbind(i);
+    }
+
     @Override
     protected void onServiceConnected() {
+        instance = this;
         AccessibilityServiceInfo info = getServiceInfo();
         if (info == null) info = new AccessibilityServiceInfo();
         info.eventTypes = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED;
@@ -85,6 +101,20 @@ public class HomeOverride extends AccessibilityService {
         if (p == null || c == null) return;
         String pkg = p.toString(), cls = c.toString();
         if (pkg.equals(getPackageName())) return;
+
+        // App lock: a locked app opened any other way (voice, another app, recents) gets the PIN pad.
+        if (Home.isLocked(this, pkg) && !pkg.equals(Home.unlockedPkg)) {
+            Log.i("LiteHome", "locked app opened: " + pkg);
+            try {
+                startActivity(new Intent(this, Home.class)
+                        .putExtra(Home.EXTRA_LOCKED, pkg)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED));
+            } catch (Exception ex) {
+                Log.w("LiteHome", "could not show PIN", ex);
+            }
+            return;
+        }
+
         long now = SystemClock.elapsedRealtime();
         if (now - refreshedAt > 60_000) refresh();
         if (!homePkgs.contains(pkg)) return;
@@ -92,6 +122,11 @@ public class HomeOverride extends AccessibilityService {
         if (!homeClasses.contains(cls)) return;
         Log.i("LiteHome", "launcher window seen: " + pkg + "/" + cls);
         openLiteHome();
+    }
+
+    /** Opens the system power menu (Restart / Power off). */
+    boolean showPowerMenu() {
+        return performGlobalAction(GLOBAL_ACTION_POWER_DIALOG);
     }
 
     @Override

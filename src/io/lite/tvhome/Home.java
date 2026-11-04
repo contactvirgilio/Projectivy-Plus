@@ -58,7 +58,17 @@ import java.util.Set;
 public class Home extends Activity {
 
     static final int COLUMNS = 5;
-    static final int ACCENT = 0xFFFFB020;
+    static final String EXTRA_LOCKED = "io.lite.tvhome.LOCKED";
+    static final String[] ACCENT_NAMES = {"Match background", "Amber", "Cyan", "Lime", "Pink", "Violet", "Red"};
+    static final int[] ACCENTS = {0, 0xFFFFB020, 0xFF22D3EE, 0xFFA3E635, 0xFFFF6FB5, 0xFFB18CFF, 0xFFFF5252};
+
+    /** Locked app the user just unlocked; the lock service lets it through until Home shows again. */
+    static volatile String unlockedPkg;
+
+    static boolean isLocked(Context c, String pkg) {
+        SharedPreferences p = c.getSharedPreferences("home", MODE_PRIVATE);
+        return PinPad.hasPin(p) && p.getStringSet("locked", Collections.<String>emptySet()).contains(pkg);
+    }
 
     static final class App {
         String pkg;
@@ -75,7 +85,10 @@ public class Home extends Activity {
     SharedPreferences prefs;
     GridView grid;
     TileAdapter adapter;
-    View lastFocused;
+    long adminUntil;          // options stay unlocked for 2 min after the PIN, or until Home is left
+    AlertDialog pinDlg;
+    int wrongPins;
+    long pinBlockedUntil;
     int moving = -1;
     boolean dirty = true;
     boolean resumed;
@@ -93,6 +106,7 @@ public class Home extends Activity {
         w.addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
         prefs = getSharedPreferences("home", MODE_PRIVATE);
         setContentView(buildUi());
+        handleLockIntent(getIntent());
 
         pkgReceiver = new BroadcastReceiver() {
             @Override
@@ -114,6 +128,7 @@ public class Home extends Activity {
     protected void onResume() {
         super.onResume();
         resumed = true;
+        unlockedPkg = null;
         bg.start();
         if (dirty) reload();
         grid.requestFocus();
@@ -123,6 +138,7 @@ public class Home extends Activity {
     protected void onPause() {
         super.onPause();
         resumed = false;
+        adminUntil = 0;
         bg.stop();
         if (moving >= 0) endMove();
     }
@@ -138,6 +154,7 @@ public class Home extends Activity {
         super.onNewIntent(intent);
         // Home pressed while already home: jump back to the first tile.
         if (moving >= 0) endMove();
+        if (handleLockIntent(intent)) return;
         if (resumed && adapter.getCount() > 0) grid.setSelection(0);
     }
 
@@ -217,23 +234,19 @@ public class Home extends Activity {
         adapter = new TileAdapter();
         grid.setAdapter(adapter);
 
+        // Restyle every visible tile on each change, so no stale highlight can survive.
         grid.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
-            @Override
-            public void onItemSelected(AdapterView<?> p, View v, int pos, long id) {
-                if (lastFocused != null && lastFocused != v) style(lastFocused, false);
-                style(v, true);
-                lastFocused = v;
-            }
-
-            @Override
-            public void onNothingSelected(AdapterView<?> p) {
-                if (lastFocused != null) style(lastFocused, false);
-                lastFocused = null;
-            }
+            @Override public void onItemSelected(AdapterView<?> p, View v, int pos, long id) { refreshFocus(); }
+            @Override public void onNothingSelected(AdapterView<?> p) { refreshFocus(); }
+        });
+        grid.setOnFocusChangeListener(new View.OnFocusChangeListener() {
+            @Override public void onFocusChange(View v, boolean has) { refreshFocus(); }
         });
         grid.setOnItemClickListener(new AdapterView.OnItemClickListener() { @Override public void onItemClick(AdapterView<?> p, View v, int pos, long id) {
             if (moving >= 0) { endMove(); return; }
-            if (pos >= apps.size()) openSettings(); else launch(apps.get(pos));
+            if (pos == apps.size()) openSettings();
+            else if (pos == apps.size() + 1) power();
+            else launch(apps.get(pos));
         }});
         grid.setOnItemLongClickListener(new AdapterView.OnItemLongClickListener() { @Override public boolean onItemLongClick(AdapterView<?> p, View v, int pos, long id) {
             if (moving < 0) showOptions(pos);
@@ -278,13 +291,34 @@ public class Home extends Activity {
         return true;
     }
 
-    void style(View cell, boolean focused) {
-        if (cell == null) return;
-        Holder h = (Holder) cell.getTag();
-        if (h == null) return;
+    int accent() {
+        int i = prefs.getInt("accent", 0);
+        return i > 0 && i < ACCENTS.length ? ACCENTS[i] : bg.accent();
+    }
+
+    void refreshFocus() {
+        int sel = grid.getSelectedItemPosition();
+        boolean has = grid.hasFocus();
+        int first = grid.getFirstVisiblePosition();
+        for (int i = 0; i < grid.getChildCount(); i++) {
+            View c = grid.getChildAt(i);
+            if (c.getTag() instanceof Holder)
+                applyFocus((Holder) c.getTag(), has && first + i == sel, true);
+        }
+    }
+
+    void applyFocus(Holder h, boolean focused, boolean animate) {
         float s = focused ? 1.08f : 1f;
-        h.card.animate().scaleX(s).scaleY(s).setDuration(120).start();
-        h.card.setForeground(focused ? focusRing(moving >= 0 ? ACCENT : Color.WHITE) : null);
+        if (animate && h.focused != focused) {
+            h.card.animate().scaleX(s).scaleY(s).setDuration(120).start();
+        } else {
+            h.card.animate().cancel();
+            h.card.setScaleX(s);
+            h.card.setScaleY(s);
+        }
+        h.focused = focused;
+        // While moving a tile the ring turns white so the mode is obvious.
+        h.card.setForeground(focused ? focusRing(moving >= 0 ? Color.WHITE : accent()) : null);
         h.caption.setTextColor(focused ? Color.WHITE : 0x00FFFFFF);
         h.caption.setShadowLayer(focused ? dp(4) : 0, 0, focused ? dp(1) : 0, focused ? 0xAA000000 : 0);
     }
@@ -292,7 +326,7 @@ public class Home extends Activity {
     Drawable focusRing(int color) {
         GradientDrawable g = new GradientDrawable();
         g.setCornerRadius(dp(10));
-        g.setStroke(dp(3), color);
+        g.setStroke(dp(4), color);
         return g;
     }
 
@@ -303,10 +337,12 @@ public class Home extends Activity {
         ImageView icon;
         TextView name;
         TextView caption;
+        ImageView lock;
+        boolean focused;
     }
 
     final class TileAdapter extends BaseAdapter {
-        @Override public int getCount() { return apps.size() + 1; } // + Settings tile
+        @Override public int getCount() { return apps.size() + 2; } // + Settings and Power tiles
         @Override public Object getItem(int p) { return p < apps.size() ? apps.get(p) : null; }
         @Override public long getItemId(int p) { return p; }
 
@@ -342,6 +378,17 @@ public class Home extends Activity {
                 h.fallback.addView(h.name, new LinearLayout.LayoutParams(-1, -2));
                 h.card.addView(h.fallback, new FrameLayout.LayoutParams(-1, -1));
 
+                h.lock = new ImageView(Home.this);
+                h.lock.setImageDrawable(getDrawable(android.R.drawable.ic_lock_lock));
+                GradientDrawable badge = new GradientDrawable();
+                badge.setShape(GradientDrawable.OVAL);
+                badge.setColor(0xB0000000);
+                h.lock.setBackground(badge);
+                h.lock.setPadding(dp(4), dp(4), dp(4), dp(4));
+                FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(dp(26), dp(26), Gravity.TOP | Gravity.END);
+                lp.setMargins(0, dp(6), dp(6), 0);
+                h.card.addView(h.lock, lp);
+
                 h.caption = new TextView(Home.this);
                 h.caption.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
                 h.caption.setSingleLine(true);
@@ -358,15 +405,20 @@ public class Home extends Activity {
             GradientDrawable bg = new GradientDrawable();
             bg.setCornerRadius(dp(10));
             if (pos >= apps.size()) {
+                boolean settings = pos == apps.size();
+                String label = settings ? "Settings" : "Power";
                 bg.setColor(0xC8232834);
                 h.card.setBackground(bg);
                 h.banner.setVisibility(View.GONE);
                 h.fallback.setVisibility(View.VISIBLE);
-                h.icon.setImageDrawable(getDrawable(android.R.drawable.ic_menu_preferences));
-                h.name.setText("Settings");
-                h.caption.setText("Settings");
+                h.icon.setImageDrawable(getDrawable(settings
+                        ? android.R.drawable.ic_menu_preferences : android.R.drawable.ic_lock_power_off));
+                h.name.setText(label);
+                h.caption.setText(label);
+                h.lock.setVisibility(settings && isLocked(Home.this, settingsPkg()) ? View.VISIBLE : View.GONE);
             } else {
                 App a = apps.get(pos);
+                h.lock.setVisibility(isLocked(Home.this, a.pkg) ? View.VISIBLE : View.GONE);
                 h.caption.setText(a.label);
                 if (a.banner != null) {
                     bg.setColor(0xFF000000);
@@ -383,13 +435,7 @@ public class Home extends Activity {
                 h.card.setBackground(bg);
             }
 
-            boolean sel = pos == grid.getSelectedItemPosition() && grid.hasFocus();
-            h.card.setScaleX(sel ? 1.08f : 1f);
-            h.card.setScaleY(sel ? 1.08f : 1f);
-            h.card.setForeground(sel ? focusRing(moving >= 0 ? ACCENT : Color.WHITE) : null);
-            h.caption.setTextColor(sel ? Color.WHITE : 0x00FFFFFF);
-            h.caption.setShadowLayer(sel ? dp(4) : 0, 0, sel ? dp(1) : 0, sel ? 0xAA000000 : 0);
-            if (sel) lastFocused = convert;
+            applyFocus(h, pos == grid.getSelectedItemPosition() && grid.hasFocus(), false);
             return convert;
         }
     }
@@ -491,7 +537,17 @@ public class Home extends Activity {
 
     // ---------------------------------------------------------------- actions
 
-    void launch(App a) {
+    void launch(final App a) {
+        if (isLocked(this, a.pkg)) {
+            askPin("Unlock " + a.label, new Runnable() {
+                @Override public void run() { unlockedPkg = a.pkg; doLaunch(a); }
+            });
+            return;
+        }
+        doLaunch(a);
+    }
+
+    void doLaunch(App a) {
         PackageManager pm = getPackageManager();
         Intent i = null;
         try {
@@ -508,7 +564,133 @@ public class Home extends Activity {
     }
 
     void openSettings() {
-        start(new Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+        final String sp = settingsPkg();
+        final Runnable go = new Runnable() {
+            @Override public void run() {
+                unlockedPkg = sp;
+                start(new Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+            }
+        };
+        if (isLocked(this, sp)) askPin("Unlock Settings", go); else go.run();
+    }
+
+    /** Opens a settings screen from inside the (already PIN-checked) options. */
+    void startSystem(Intent i) {
+        unlockedPkg = settingsPkg();
+        start(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+    }
+
+    String settingsPkg() {
+        try {
+            ResolveInfo ri = getPackageManager().resolveActivity(new Intent(Settings.ACTION_SETTINGS), 0);
+            if (ri != null && ri.activityInfo != null) return ri.activityInfo.packageName;
+        } catch (Exception ignored) { }
+        return "com.android.tv.settings";
+    }
+
+    // ---------------------------------------------------------------- power
+
+    void power() {
+        HomeOverride s = HomeOverride.instance;
+        if (s != null && s.showPowerMenu()) return;
+        dialog().setTitle("Power")
+                .setMessage("Android only lets apps open the system power menu (Restart / Power off) "
+                        + "through an accessibility service. Turn on \"Override Home button\" to use this tile.")
+                .setPositiveButton("Set it up", new android.content.DialogInterface.OnClickListener() {
+                    @Override public void onClick(android.content.DialogInterface d, int w) { asAdmin(new Runnable() {
+                        @Override public void run() { toggleOverride(); }
+                    }); }
+                })
+                .setNegativeButton("Close", null)
+                .show();
+    }
+
+    // ---------------------------------------------------------------- PIN
+
+    /** Locked app opened from elsewhere: the lock service sent us here. */
+    boolean handleLockIntent(Intent i) {
+        if (i == null) return false;
+        final String pkg = i.getStringExtra(EXTRA_LOCKED);
+        if (pkg == null) return false;
+        i.removeExtra(EXTRA_LOCKED);
+        if (pinDlg != null && pinDlg.isShowing()) return true;
+        String label = pkg;
+        try {
+            PackageManager pm = getPackageManager();
+            label = pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString();
+        } catch (Exception ignored) { }
+        askPin("Unlock " + label, new Runnable() {
+            @Override public void run() {
+                unlockedPkg = pkg;
+                for (App a : apps) if (a.pkg.equals(pkg)) { doLaunch(a); return; }
+                Intent l = getPackageManager().getLeanbackLaunchIntentForPackage(pkg);
+                if (l == null) l = getPackageManager().getLaunchIntentForPackage(pkg);
+                if (l != null) start(l.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+            }
+        });
+        return true;
+    }
+
+    void askPin(String title, final Runnable ok) {
+        long wait = pinBlockedUntil - android.os.SystemClock.elapsedRealtime();
+        if (wait > 0) {
+            Toast.makeText(this, "Too many wrong PINs. Try again in " + (wait / 1000 + 1) + " s",
+                    Toast.LENGTH_SHORT).show();
+            return;
+        }
+        pinDlg = PinPad.show(this, title, accent(), new PinPad.Done() {
+            @Override public void onPin(String pin) {
+                if (PinPad.check(prefs, pin)) {
+                    wrongPins = 0;
+                    ok.run();
+                } else {
+                    if (++wrongPins >= 5) {
+                        wrongPins = 0;
+                        pinBlockedUntil = android.os.SystemClock.elapsedRealtime() + 30_000;
+                    }
+                    Toast.makeText(Home.this, "Wrong PIN", Toast.LENGTH_SHORT).show();
+                }
+            }
+        });
+    }
+
+    /** Runs r if no PIN is set or it was already entered during this visit; otherwise asks first. */
+    void asAdmin(final Runnable r) {
+        if (!PinPad.hasPin(prefs) || android.os.SystemClock.elapsedRealtime() < adminUntil) { r.run(); return; }
+        askPin("Enter PIN", new Runnable() {
+            @Override public void run() { unlockAdmin(); r.run(); }
+        });
+    }
+
+    void unlockAdmin() { adminUntil = android.os.SystemClock.elapsedRealtime() + 120_000; }
+
+    void setUpPin(final Runnable then) {
+        PinPad.show(this, "Choose a 4-digit PIN", accent(), new PinPad.Done() {
+            @Override public void onPin(final String first) {
+                PinPad.show(Home.this, "Enter it again", accent(), new PinPad.Done() {
+                    @Override public void onPin(String second) {
+                        if (!first.equals(second)) {
+                            Toast.makeText(Home.this, "PINs didn't match", Toast.LENGTH_SHORT).show();
+                            return;
+                        }
+                        PinPad.savePin(prefs, first);
+                        unlockAdmin();
+                        Toast.makeText(Home.this, "PIN saved", Toast.LENGTH_SHORT).show();
+                        if (then != null) then.run();
+                    }
+                });
+            }
+        });
+    }
+
+    void setLocked(String pkg, boolean lock) {
+        Set<String> l = new HashSet<>(prefs.getStringSet("locked", Collections.<String>emptySet()));
+        if (lock) l.add(pkg); else l.remove(pkg);
+        prefs.edit().putStringSet("locked", l).apply();
+        adapter.notifyDataSetChanged();
+        if (lock && !overrideOn())
+            Toast.makeText(this, "Locked in Lite Home. Turn on Override Home button to also "
+                    + "lock it when opened from elsewhere.", Toast.LENGTH_LONG).show();
     }
 
     void start(Intent i) {
@@ -549,6 +731,7 @@ public class Home extends Activity {
                 .setPositiveButton("Open accessibility", new android.content.DialogInterface.OnClickListener() {
                     @Override public void onClick(android.content.DialogInterface d, int w) {
                         try {
+                            unlockedPkg = settingsPkg();
                             startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
                                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
                         } catch (Exception e) {
@@ -583,6 +766,7 @@ public class Home extends Activity {
     void applyBackground() {
         bg.configure(prefs.getInt("bg_palette", 0), prefs.getInt("bg_speed", 1), prefs.getInt("bg_bright", 1));
         bg.start();
+        refreshFocus();
     }
 
     void pickBackground() {
@@ -623,35 +807,64 @@ public class Home extends Activity {
 
     void showOptions(final int pos) {
         if (pos < 0) return;
-        if (pos >= apps.size()) {
-            final List<String> hiddenPkgs = new ArrayList<>(
-                    prefs.getStringSet("hidden", Collections.<String>emptySet()));
-            String[] items = {
-                    "Open Android settings",
-                    "Background: " + paletteName(prefs.getInt("bg_palette", 0)),
-                    "Motion: " + FlowBackground.SPEED_NAMES[prefs.getInt("bg_speed", 1)],
-                    "Brightness: " + FlowBackground.BRIGHT_NAMES[prefs.getInt("bg_bright", 1)],
-                    "Show hidden apps (" + hiddenPkgs.size() + ")",
-                    "Reset app order",
-                    "Override Home button: " + (overrideOn() ? "ON" : "OFF")};
-            dialog().setTitle("Lite Home").setItems(items, new android.content.DialogInterface.OnClickListener() { @Override public void onClick(android.content.DialogInterface d, int which) {
-                switch (which) {
-                    case 0: openSettings(); break;
-                    case 1: pickBackground(); break;
-                    case 2: pickSetting("Motion", FlowBackground.SPEED_NAMES, "bg_speed", 1); break;
-                    case 3: pickSetting("Brightness", FlowBackground.BRIGHT_NAMES, "bg_bright", 1); break;
-                    case 4: showHidden(hiddenPkgs); break;
-                    case 5: prefs.edit().remove("order").apply(); reload(); break;
-                    default: toggleOverride();
-                }
-            }}).show();
-            return;
+        asAdmin(new Runnable() {
+            @Override public void run() {
+                if (pos >= apps.size()) showHomeOptions(); else showAppOptions(pos);
+            }
+        });
+    }
+
+    void showHomeOptions() {
+        final List<String> hiddenPkgs = new ArrayList<>(
+                prefs.getStringSet("hidden", Collections.<String>emptySet()));
+        final boolean pin = PinPad.hasPin(prefs);
+        final String sp = settingsPkg();
+        final List<String> items = new ArrayList<>();
+        final List<Runnable> acts = new ArrayList<>();
+        items.add("Open Android settings");
+        acts.add(new Runnable() { public void run() { startSystem(new Intent(Settings.ACTION_SETTINGS)); } });
+        items.add("Background: " + paletteName(prefs.getInt("bg_palette", 0)));
+        acts.add(new Runnable() { public void run() { pickBackground(); } });
+        items.add("Motion: " + FlowBackground.SPEED_NAMES[prefs.getInt("bg_speed", 1)]);
+        acts.add(new Runnable() { public void run() { pickSetting("Motion", FlowBackground.SPEED_NAMES, "bg_speed", 1); } });
+        items.add("Brightness: " + FlowBackground.BRIGHT_NAMES[prefs.getInt("bg_bright", 1)]);
+        acts.add(new Runnable() { public void run() { pickSetting("Brightness", FlowBackground.BRIGHT_NAMES, "bg_bright", 1); } });
+        items.add("Highlight: " + ACCENT_NAMES[Math.min(prefs.getInt("accent", 0), ACCENT_NAMES.length - 1)]);
+        acts.add(new Runnable() { public void run() { pickSetting("Highlight colour", ACCENT_NAMES, "accent", 0); } });
+        items.add(pin ? "Change PIN" : "Set up PIN lock");
+        acts.add(new Runnable() { public void run() { setUpPin(null); } });
+        if (pin) {
+            items.add("Lock Android settings: " + (isLocked(this, sp) ? "ON" : "OFF"));
+            acts.add(new Runnable() { public void run() { setLocked(sp, !isLocked(Home.this, sp)); } });
+            items.add("Remove PIN and all locks");
+            acts.add(new Runnable() { public void run() {
+                PinPad.clearPin(prefs);
+                prefs.edit().remove("locked").apply();
+                adapter.notifyDataSetChanged();
+                Toast.makeText(Home.this, "PIN removed", Toast.LENGTH_SHORT).show();
+            } });
         }
+        items.add("Show hidden apps (" + hiddenPkgs.size() + ")");
+        acts.add(new Runnable() { public void run() { showHidden(hiddenPkgs); } });
+        items.add("Reset app order");
+        acts.add(new Runnable() { public void run() { prefs.edit().remove("order").apply(); reload(); } });
+        items.add("Override Home button: " + (overrideOn() ? "ON" : "OFF"));
+        acts.add(new Runnable() { public void run() { toggleOverride(); } });
+
+        dialog().setTitle("Lite Home").setItems(items.toArray(new String[0]),
+                new android.content.DialogInterface.OnClickListener() {
+                    @Override public void onClick(android.content.DialogInterface d, int which) { acts.get(which).run(); }
+                }).show();
+    }
+
+    void showAppOptions(final int pos) {
         final App a = apps.get(pos);
-        String[] items = {"Open", "Move", "Move to first", "Hide", "App info", "Uninstall"};
+        final boolean locked = isLocked(this, a.pkg);
+        String[] items = {"Open", "Move", "Move to first", "Hide",
+                locked ? "Unlock (no PIN needed)" : "Lock with PIN", "App info", "Uninstall"};
         dialog().setTitle(a.label).setItems(items, new android.content.DialogInterface.OnClickListener() { @Override public void onClick(android.content.DialogInterface d, int which) {
             switch (which) {
-                case 0: launch(a); break;
+                case 0: unlockedPkg = a.pkg; doLaunch(a); break;
                 case 1: startMove(pos); break;
                 case 2:
                     apps.remove(pos);
@@ -670,10 +883,15 @@ public class Home extends Activity {
                     break;
                 }
                 case 4:
-                    start(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                            Uri.fromParts("package", a.pkg, null)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+                    if (locked) setLocked(a.pkg, false);
+                    else if (PinPad.hasPin(prefs)) setLocked(a.pkg, true);
+                    else setUpPin(new Runnable() { public void run() { setLocked(a.pkg, true); } });
                     break;
                 case 5:
+                    startSystem(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                            Uri.fromParts("package", a.pkg, null)));
+                    break;
+                case 6:
                     start(new Intent(Intent.ACTION_DELETE,
                             Uri.fromParts("package", a.pkg, null)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
                     break;

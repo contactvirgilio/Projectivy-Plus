@@ -106,6 +106,12 @@ public class FlowBackground extends View {
         for (int k = 0; k < 4; k++) pal[k] = mix(PALETTES[i][k], PALETTES[j][k], f);
     }
 
+    /** Bright colour taken from the current theme, for focus highlights. */
+    int accent() {
+        currentPalette();
+        return mix(pal[2], Color.WHITE, 0.2f);
+    }
+
     @Override
     protected void onDraw(Canvas canvas) {
         long now = SystemClock.elapsedRealtime();

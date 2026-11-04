@@ -1,16 +1,21 @@
 # Lite Home
 
-A tiny Android TV launcher: one activity, no libraries, no network permission, ~23 KB APK.
+A tiny Android TV launcher: one activity, no libraries, no network permission, ~31 KB APK.
 
 Not affiliated with or based on Projectivy Launcher.
 
 - Flowing animated gradient background: 7 themes (Aurora, Sunset, Ocean, Forest, Ember, Lavender, Midnight)
   or "Cycle through all", with Motion (Still/Slow/Normal/Fast) and Brightness (Dim/Normal/Bright). Choices preview live.
 - Clock and date, then a grid of your apps (TV banners when the app has one, otherwise its icon on a tinted tile)
-- Settings tile always last
-- Long-press OK (or Menu) on an app: Open, Move, Move to first, Hide, App info, Uninstall
-- Long-press OK on Settings: Android settings, Background, Motion, Brightness, show/unhide hidden apps,
-  reset order, Override Home button
+- Settings and Power tiles always last. Power opens the system power menu (Restart / Power off);
+  it needs the Home button override on, since Android only allows that through accessibility.
+- PIN lock: lock any app (lock badge on its tile), optionally lock Android Settings, and the Lite Home
+  options themselves ask for the PIN. With the override on, locked apps also ask when opened from
+  elsewhere (voice, other apps, recents). 5 wrong tries = 30 s wait. Forgot it? `adb shell pm clear io.lite.tvhome`
+- Highlight colour: match the background theme, or Amber, Cyan, Lime, Pink, Violet, Red
+- Long-press OK (or Menu) on an app: Open, Move, Move to first, Hide, Lock with PIN, App info, Uninstall
+- Long-press OK on Settings or Power: Android settings, Background, Motion, Brightness, Highlight,
+  PIN lock, Lock Android settings, show/unhide hidden apps, reset order, Override Home button
 - Move mode: arrows move the tile, OK or Back to finish
 - Updates itself when apps are installed or removed
 
