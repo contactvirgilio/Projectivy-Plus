@@ -85,6 +85,8 @@ public class Home extends Activity {
     SharedPreferences prefs;
     GridView grid;
     TileAdapter adapter;
+    Holder focusedHolder;
+    android.animation.ValueAnimator pulse;
     long adminUntil;          // options stay unlocked for 2 min after the PIN, or until Home is left
     AlertDialog pinDlg;
     int wrongPins;
@@ -130,6 +132,7 @@ public class Home extends Activity {
         resumed = true;
         unlockedPkg = null;
         bg.start();
+        pulse.start();
         if (dirty) reload();
         grid.requestFocus();
     }
@@ -140,6 +143,7 @@ public class Home extends Activity {
         resumed = false;
         adminUntil = 0;
         bg.stop();
+        pulse.cancel();
         if (moving >= 0) endMove();
     }
 
@@ -173,7 +177,7 @@ public class Home extends Activity {
 
     View buildUi() {
         DisplayMetrics m = getResources().getDisplayMetrics();
-        int padH = dp(48), gridPad = dp(14), hSpace = dp(26), vSpace = dp(18);
+        int padH = dp(48), gridPad = dp(22), hSpace = dp(30), vSpace = dp(20);
 
         FrameLayout root = new FrameLayout(this);
         root.setBackgroundColor(Color.BLACK);
@@ -233,6 +237,18 @@ public class Home extends Activity {
 
         adapter = new TileAdapter();
         grid.setAdapter(adapter);
+
+        // One breathing animation, applied to whichever tile has focus.
+        pulse = android.animation.ValueAnimator.ofFloat(0f, 1f);
+        pulse.setDuration(1300);
+        pulse.setRepeatMode(android.animation.ValueAnimator.REVERSE);
+        pulse.setRepeatCount(android.animation.ValueAnimator.INFINITE);
+        pulse.setInterpolator(new android.view.animation.AccelerateDecelerateInterpolator());
+        pulse.addUpdateListener(new android.animation.ValueAnimator.AnimatorUpdateListener() {
+            @Override public void onAnimationUpdate(android.animation.ValueAnimator a) {
+                if (focusedHolder != null) focusedHolder.ring.setPulse((Float) a.getAnimatedValue());
+            }
+        });
 
         // Restyle every visible tile on each change, so no stale highlight can survive.
         grid.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
@@ -310,27 +326,32 @@ public class Home extends Activity {
     void applyFocus(Holder h, boolean focused, boolean animate) {
         float s = focused ? 1.08f : 1f;
         if (animate && h.focused != focused) {
-            h.card.animate().scaleX(s).scaleY(s).setDuration(120).start();
+            h.wrap.animate().scaleX(s).scaleY(s).setDuration(140).start();
         } else {
-            h.card.animate().cancel();
-            h.card.setScaleX(s);
-            h.card.setScaleY(s);
+            h.wrap.animate().cancel();
+            h.wrap.setScaleX(s);
+            h.wrap.setScaleY(s);
         }
         h.focused = focused;
         // While moving a tile the ring turns white so the mode is obvious.
-        h.card.setForeground(focused ? focusRing(moving >= 0 ? Color.WHITE : accent()) : null);
+        h.ring.setColor(moving >= 0 ? Color.WHITE : accent());
+        h.glow.setVisibility(focused ? View.VISIBLE : View.INVISIBLE);
+        if (focused) {
+            if (focusedHolder != null && focusedHolder != h) focusedHolder.glow.setVisibility(View.INVISIBLE);
+            focusedHolder = h;
+            if (pulse.isRunning()) h.ring.setPulse((Float) pulse.getAnimatedValue());
+        } else if (focusedHolder == h) {
+            focusedHolder = null;
+        }
         h.caption.setTextColor(focused ? Color.WHITE : 0x00FFFFFF);
         h.caption.setShadowLayer(focused ? dp(4) : 0, 0, focused ? dp(1) : 0, focused ? 0xAA000000 : 0);
     }
 
-    Drawable focusRing(int color) {
-        GradientDrawable g = new GradientDrawable();
-        g.setCornerRadius(dp(10));
-        g.setStroke(dp(4), color);
-        return g;
-    }
 
     static final class Holder {
+        FrameLayout wrap;   // scaled on focus; holds glow + card
+        View glow;
+        GlowRing ring;
         FrameLayout card;
         ImageView banner;
         LinearLayout fallback;
@@ -355,10 +376,24 @@ public class Home extends Activity {
                 cell.setOrientation(LinearLayout.VERTICAL);
                 cell.setClipChildren(false);
 
+                h.wrap = new FrameLayout(Home.this);
+                h.wrap.setClipChildren(false);
+                h.wrap.setClipToPadding(false);
+                cell.addView(h.wrap, new LinearLayout.LayoutParams(-1, tileH));
+
+                h.ring = new GlowRing(getResources().getDisplayMetrics().density, 10);
+                h.glow = new View(Home.this);
+                h.glow.setBackground(h.ring);
+                h.glow.setVisibility(View.INVISIBLE);
+                int m = (int) Math.ceil(h.ring.margin);
+                FrameLayout.LayoutParams glp = new FrameLayout.LayoutParams(-1, -1);
+                glp.setMargins(-m, -m, -m, -m);
+                h.wrap.addView(h.glow, glp);
+
                 h.card = new FrameLayout(Home.this);
                 h.card.setOutlineProvider(ViewOutlineProvider.BACKGROUND);
                 h.card.setClipToOutline(true);
-                cell.addView(h.card, new LinearLayout.LayoutParams(-1, tileH));
+                h.wrap.addView(h.card, new FrameLayout.LayoutParams(-1, -1));
 
                 h.banner = new ImageView(Home.this);
                 h.banner.setScaleType(ImageView.ScaleType.CENTER_CROP);
@@ -393,7 +428,7 @@ public class Home extends Activity {
                 h.caption.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
                 h.caption.setSingleLine(true);
                 h.caption.setGravity(Gravity.CENTER);
-                h.caption.setPadding(0, dp(8), 0, 0);
+                h.caption.setPadding(0, dp(14), 0, 0);
                 cell.addView(h.caption, new LinearLayout.LayoutParams(-1, -2));
 
                 cell.setTag(h);
