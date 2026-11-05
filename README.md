@@ -7,14 +7,19 @@ Not affiliated with or based on Projectivy Launcher.
 - Flowing animated gradient background: 7 themes (Aurora, Sunset, Ocean, Forest, Ember, Lavender, Midnight)
   or "Cycle through all", with Motion (Still/Slow/Normal/Fast) and Brightness (Dim/Normal/Bright). Choices preview live.
 - Clock and date, then a grid of your apps (TV banners when the app has one, otherwise its icon on a tinted tile)
-- Settings and Power tiles always last. Power opens the system power menu (Restart / Power off);
-  it needs the Home button override on, since Android only allows that through accessibility.
+- Four fixed tiles after your apps:
+  - **Close apps**: lists the user-installed apps you opened since the TV started (tracked by the
+    accessibility service) and closes the ones you tick. Uses `killBackgroundProcesses`, so apps
+    playing in the background (foreground service) may survive; on Android 14+ it opens App info instead.
+  - **Lite Home**: the launcher's options menu
+  - **Android settings**: opens system settings
+  - **Power**: system power menu (Restart / Power off), needs the Home button override
 - PIN lock: lock any app (lock badge on its tile), optionally lock Android Settings, and the Lite Home
   options themselves ask for the PIN. With the override on, locked apps also ask when opened from
   elsewhere (voice, other apps, recents). 5 wrong tries = 30 s wait. Forgot it? `adb shell pm clear io.lite.tvhome`
 - Highlight colour: match the background theme, or Amber, Cyan, Lime, Pink, Violet, Red
 - Long-press OK (or Menu) on an app: Open, Move, Move to first, Hide, Lock with PIN, App info, Uninstall
-- Long-press OK on Settings or Power: Android settings, Background, Motion, Brightness, Highlight,
+- Lite Home tile (or long-press any fixed tile): Android settings, Background, Motion, Brightness, Highlight,
   PIN lock, Lock Android settings, show/unhide hidden apps, reset order, Override Home button
 - Move mode: arrows move the tile, OK or Back to finish
 - Updates itself when apps are installed or removed

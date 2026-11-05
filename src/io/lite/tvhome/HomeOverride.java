@@ -102,6 +102,8 @@ public class HomeOverride extends AccessibilityService {
         String pkg = p.toString(), cls = c.toString();
         if (pkg.equals(getPackageName())) return;
 
+        RunningApps.seen(this, pkg);
+
         // App lock: a locked app opened any other way (voice, another app, recents) gets the PIN pad.
         if (Home.isLocked(this, pkg) && !pkg.equals(Home.unlockedPkg)) {
             Log.i("LiteHome", "locked app opened: " + pkg);

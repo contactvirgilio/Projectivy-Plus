@@ -58,6 +58,13 @@ import java.util.Set;
 public class Home extends Activity {
 
     static final int COLUMNS = 5;
+    // Fixed tiles after the apps.
+    static final int T_CLOSE = 0, T_MENU = 1, T_SETTINGS = 2, T_POWER = 3, SYSTEM_TILES = 4;
+    static final String[] SYSTEM_LABELS = {"Close apps", "Lite Home", "Android settings", "Power"};
+    static final int[] SYSTEM_ICONS = {android.R.drawable.ic_menu_close_clear_cancel,
+            android.R.drawable.ic_menu_manage, android.R.drawable.ic_menu_preferences,
+            android.R.drawable.ic_lock_power_off};
+
     static final String EXTRA_LOCKED = "io.lite.tvhome.LOCKED";
     static final String[] ACCENT_NAMES = {"Match background", "Amber", "Cyan", "Lime", "Pink", "Violet", "Red"};
     static final int[] ACCENTS = {0, 0xFFFFB020, 0xFF22D3EE, 0xFFA3E635, 0xFFFF6FB5, 0xFFB18CFF, 0xFFFF5252};
@@ -260,9 +267,13 @@ public class Home extends Activity {
         });
         grid.setOnItemClickListener(new AdapterView.OnItemClickListener() { @Override public void onItemClick(AdapterView<?> p, View v, int pos, long id) {
             if (moving >= 0) { endMove(); return; }
-            if (pos == apps.size()) openSettings();
-            else if (pos == apps.size() + 1) power();
-            else launch(apps.get(pos));
+            if (pos < apps.size()) { launch(apps.get(pos)); return; }
+            switch (pos - apps.size()) {
+                case T_CLOSE: closeApps(); break;
+                case T_MENU: showOptions(pos); break;
+                case T_SETTINGS: openSettings(); break;
+                case T_POWER: power(); break;
+            }
         }});
         grid.setOnItemLongClickListener(new AdapterView.OnItemLongClickListener() { @Override public boolean onItemLongClick(AdapterView<?> p, View v, int pos, long id) {
             if (moving < 0) showOptions(pos);
@@ -363,7 +374,7 @@ public class Home extends Activity {
     }
 
     final class TileAdapter extends BaseAdapter {
-        @Override public int getCount() { return apps.size() + 2; } // + Settings and Power tiles
+        @Override public int getCount() { return apps.size() + SYSTEM_TILES; }
         @Override public Object getItem(int p) { return p < apps.size() ? apps.get(p) : null; }
         @Override public long getItemId(int p) { return p; }
 
@@ -440,17 +451,18 @@ public class Home extends Activity {
             GradientDrawable bg = new GradientDrawable();
             bg.setCornerRadius(dp(10));
             if (pos >= apps.size()) {
-                boolean settings = pos == apps.size();
-                String label = settings ? "Settings" : "Power";
+                int t = pos - apps.size();
+                String label = SYSTEM_LABELS[t];
                 bg.setColor(0xC8232834);
                 h.card.setBackground(bg);
                 h.banner.setVisibility(View.GONE);
                 h.fallback.setVisibility(View.VISIBLE);
-                h.icon.setImageDrawable(getDrawable(settings
-                        ? android.R.drawable.ic_menu_preferences : android.R.drawable.ic_lock_power_off));
+                h.icon.setImageDrawable(getDrawable(SYSTEM_ICONS[t]));
                 h.name.setText(label);
                 h.caption.setText(label);
-                h.lock.setVisibility(settings && isLocked(Home.this, settingsPkg()) ? View.VISIBLE : View.GONE);
+                boolean locked = (t == T_SETTINGS && isLocked(Home.this, settingsPkg()))
+                        || (t == T_MENU && PinPad.hasPin(prefs));
+                h.lock.setVisibility(locked ? View.VISIBLE : View.GONE);
             } else {
                 App a = apps.get(pos);
                 h.lock.setVisibility(isLocked(Home.this, a.pkg) ? View.VISIBLE : View.GONE);
@@ -621,6 +633,75 @@ public class Home extends Activity {
             if (ri != null && ri.activityInfo != null) return ri.activityInfo.packageName;
         } catch (Exception ignored) { }
         return "com.android.tv.settings";
+    }
+
+    // ---------------------------------------------------------------- close apps
+
+    void closeApps() {
+        if (HomeOverride.instance == null) {
+            dialog().setTitle("Close apps")
+                    .setMessage("Lite Home keeps track of the apps you open through its accessibility "
+                            + "service. Turn on \"Override Home button\" first.")
+                    .setPositiveButton("Set it up", new android.content.DialogInterface.OnClickListener() {
+                        @Override public void onClick(android.content.DialogInterface d, int w) { asAdmin(new Runnable() {
+                            @Override public void run() { toggleOverride(); }
+                        }); }
+                    })
+                    .setNegativeButton("Close", null)
+                    .show();
+            return;
+        }
+        final List<String> pkgs = RunningApps.list(this);
+        if (pkgs.isEmpty()) {
+            Toast.makeText(this, "No user apps opened since the TV started", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        PackageManager pm = getPackageManager();
+        String[] labels = new String[pkgs.size()];
+        final boolean[] checked = new boolean[pkgs.size()];
+        for (int i = 0; i < pkgs.size(); i++) {
+            String l = pkgs.get(i);
+            try { l = pm.getApplicationLabel(pm.getApplicationInfo(l, 0)).toString(); } catch (Exception ignored) { }
+            labels[i] = l;
+            checked[i] = true;
+        }
+        dialog().setTitle("Close apps")
+                .setMultiChoiceItems(labels, checked, new android.content.DialogInterface.OnMultiChoiceClickListener() {
+                    @Override public void onClick(android.content.DialogInterface d, int which, boolean on) { checked[which] = on; }
+                })
+                .setPositiveButton("Close selected", new android.content.DialogInterface.OnClickListener() {
+                    @Override public void onClick(android.content.DialogInterface d, int w) {
+                        List<String> sel = new ArrayList<>();
+                        for (int i = 0; i < pkgs.size(); i++) if (checked[i]) sel.add(pkgs.get(i));
+                        kill(sel);
+                    }
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    void kill(List<String> pkgs) {
+        if (pkgs.isEmpty()) return;
+        if (android.os.Build.VERSION.SDK_INT >= 34) {
+            // Android 14+ only lets apps stop their own processes: hand over to App info.
+            String pkg = pkgs.get(0);
+            RunningApps.forget(this, pkg);
+            Toast.makeText(this, "Android 14 blocks this. Press Force stop", Toast.LENGTH_LONG).show();
+            startSystem(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", pkg, null)));
+            return;
+        }
+        android.app.ActivityManager am = (android.app.ActivityManager) getSystemService(ACTIVITY_SERVICE);
+        int n = 0;
+        for (String pkg : pkgs) {
+            try {
+                am.killBackgroundProcesses(pkg);
+                RunningApps.forget(this, pkg);
+                n++;
+            } catch (Exception e) {
+                android.util.Log.w("LiteHome", "could not close " + pkg, e);
+            }
+        }
+        Toast.makeText(this, "Closed " + n + (n == 1 ? " app" : " apps"), Toast.LENGTH_SHORT).show();
     }
 
     // ---------------------------------------------------------------- power
