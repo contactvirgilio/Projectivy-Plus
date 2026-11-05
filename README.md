@@ -8,7 +8,7 @@ Not affiliated with or based on Projectivy Launcher.
   or "Cycle through all", with Motion (Still/Slow/Normal/Fast) and Brightness (Dim/Normal/Bright). Choices preview live.
 - Clock and date, then a grid of your apps (TV banners when the app has one, otherwise its icon on a tinted tile)
 - Three fixed tiles after your apps:
-  - **Lite Home**: the launcher's options menu
+  - **Lite Home**: the launcher's options menu (shown as the app icon)
   - **Android settings**: opens system settings (shown as the green Android robot)
   - **Power**: system power menu (Restart / Power off), needs the Home button override
 - PIN lock: lock any app (lock badge on its tile), optionally lock Android Settings, and the Lite Home
@@ -52,7 +52,8 @@ Remove: `adb uninstall io.lite.tvhome`
 ## Build
 
 Needs only a JDK, Python 3, an API 29 `android.jar` and `dx.jar`. No Gradle, no aapt:
-`tools/manifest.py` writes the binary `AndroidManifest.xml`, `res/xml/accessibility.xml` and `resources.arsc`.
+`tools/manifest.py` writes the binary `AndroidManifest.xml`, `res/xml/accessibility.xml` and `resources.arsc`,
+and copies the app icon and TV banner from `art/` (sources: `icon.svg`, `banner.svg`).
 
 ```
 # android.jar (API 29)

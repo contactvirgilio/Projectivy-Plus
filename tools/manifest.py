@@ -12,7 +12,8 @@ ANDROID_NS = "http://schemas.android.com/apk/res/android"
 
 # Framework attribute IDs (android.R.attr)
 ATTR = {
-    "theme": 0x01010000, "label": 0x01010001, "name": 0x01010003,
+    "theme": 0x01010000, "label": 0x01010001, "icon": 0x01010002, "name": 0x01010003,
+    "banner": 0x010103f2,
     "permission": 0x01010006, "exported": 0x01010010,
     "clearTaskOnLaunch": 0x01010015, "stateNotNeeded": 0x01010016,
     "launchMode": 0x0101001d, "screenOrientation": 0x0101001e,
@@ -28,9 +29,31 @@ T_REF, T_STR, T_INT, T_HEX, T_BOOL = 0x01, 0x03, 0x10, 0x11, 0x12
 THEME_FULLSCREEN = 0x0103012a  # Theme.DeviceDefault.NoActionBar.Fullscreen
 
 PKG = "io.lite.tvhome"
-VERSION_CODE, VERSION_NAME = 11, "1.11"
-ACCESSIBILITY_XML_ID = 0x7f010000  # @xml/accessibility (package 0x7f, type 1, entry 0)
+VERSION_CODE, VERSION_NAME = 12, "1.12"
 ACCESSIBILITY_XML_PATH = "res/xml/accessibility.xml"
+ART = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "art")
+
+# Every resource in the APK: (type, name, path in APK, screen density or 0 for any, source file).
+# IDs are 0x7f TT EEEE, with types and entries numbered in the order they appear here.
+RESOURCES = [
+    ("xml", "accessibility", ACCESSIBILITY_XML_PATH, 0, None),
+    ("drawable", "icon", "res/drawable-xxxhdpi-v4/icon.png", 640, "icon.png"),        # 192 px = 48 dp
+    ("drawable", "banner", "res/drawable-xhdpi-v4/banner.jpg", 320, "banner.jpg"),    # 640x360 = 320x180 dp
+]
+
+
+def res_id(type_, name):
+    types = []
+    for t, n, _, _, _ in RESOURCES:
+        if t not in types:
+            types.append(t)
+    entries = [n for t, n, _, _, _ in RESOURCES if t == type_]
+    return 0x7f000000 | ((types.index(type_) + 1) << 16) | entries.index(name)
+
+
+ACCESSIBILITY_XML_ID = res_id("xml", "accessibility")
+ICON_ID = res_id("drawable", "icon")
+BANNER_ID = res_id("drawable", "banner")
 
 # (tag, [(attr, type, value)], children)  attr without android: prefix unless "package"
 MANIFEST = ("manifest", [("package", T_STR, PKG), ("versionCode", T_INT, VERSION_CODE),
@@ -39,7 +62,8 @@ MANIFEST = ("manifest", [("package", T_STR, PKG), ("versionCode", T_INT, VERSION
     ("uses-permission", [("name", T_STR, "android.permission.REQUEST_DELETE_PACKAGES")], []),
     ("uses-feature", [("name", T_STR, "android.software.leanback"), ("required", T_BOOL, False)], []),
     ("uses-feature", [("name", T_STR, "android.hardware.touchscreen"), ("required", T_BOOL, False)], []),
-    ("application", [("theme", T_REF, THEME_FULLSCREEN), ("label", T_STR, "Lite Home")], [
+    ("application", [("theme", T_REF, THEME_FULLSCREEN), ("label", T_STR, "Lite Home"),
+                     ("icon", T_REF, ICON_ID), ("banner", T_REF, BANNER_ID)], [
         ("activity", [
             ("theme", T_REF, THEME_FULLSCREEN),
             ("label", T_STR, "Lite Home"),
@@ -161,26 +185,50 @@ def axml(tree):
 
 
 def arsc():
-    """resources.arsc with a single entry: xml/accessibility -> res/xml/accessibility.xml"""
-    values = Pool(); values.add(ACCESSIBILITY_XML_PATH)
-    types = Pool(); types.add("xml")
-    keys = Pool(); keys.add("accessibility")
+    """resources.arsc for RESOURCES: one type chunk per (type, density) combination."""
+    values, types, keys = Pool(), Pool(), Pool()
+    order = []
+    for t, n, path, _, _ in RESOURCES:
+        values.add(path)
+        types.add(t)
+        keys.add(n)
+        if t not in order:
+            order.append(t)
+
+    body = b""
+    for ti, t in enumerate(order, start=1):
+        names = [n for tt, n, _, _, _ in RESOURCES if tt == t]
+        count = len(names)
+        varies = 0x0100 if any(d for tt, _, _, d, _ in RESOURCES if tt == t) else 0  # CONFIG_DENSITY
+        body += struct.pack("<HHIBBHI", 0x0202, 16, 16 + 4 * count, ti, 0, 0, count)
+        body += struct.pack("<I", varies) * count
+        densities = []
+        for tt, _, _, d, _ in RESOURCES:
+            if tt == t and d not in densities:
+                densities.append(d)
+        for dens in densities:
+            config = struct.pack("<I", 64) + b"\0" * 10 + struct.pack("<H", dens) + b"\0" * 48
+            hdr = 20 + len(config)
+            offsets, data = [], b""
+            for tt, n, path, d, _ in RESOURCES:
+                if tt != t:
+                    continue
+                if d != dens:
+                    offsets.append(0xFFFFFFFF)
+                    continue
+                offsets.append(len(data))
+                data += struct.pack("<HHI", 8, 0, keys.index[n])
+                data += struct.pack("<HBBI", 8, 0, T_STR, values.index[path])
+            start = hdr + 4 * count
+            body += struct.pack("<HHIBBHII", 0x0201, hdr, start + len(data), ti, 0, 0, count, start)
+            body += config + b"".join(struct.pack("<I", o) for o in offsets) + data
+
     tstr, kstr = types.chunk(), keys.chunk()
-
-    spec = struct.pack("<HHIBBHI", 0x0202, 16, 16 + 4, 1, 0, 0, 1) + struct.pack("<I", 0)
-
-    config = struct.pack("<I", 64) + b"\x00" * 60
-    hdr = 8 + 1 + 1 + 2 + 4 + 4 + len(config)          # 84
-    entries_start = hdr + 4
-    entry = struct.pack("<HHI", 8, 0, 0) + struct.pack("<HBBI", 8, 0, T_STR, 0)
-    typ = struct.pack("<HHIBBHII", 0x0201, hdr, entries_start + len(entry), 1, 0, 0, 1, entries_start)
-    typ += config + struct.pack("<I", 0) + entry
-
-    name = PKG.encode("utf-16-le").ljust(256, b"\x00")
+    name = PKG.encode("utf-16-le").ljust(256, b"\0")
     pkg_hdr = 288
-    pkg_body = tstr + kstr + spec + typ
+    pkg_body = tstr + kstr + body
     pkg = struct.pack("<HHII", 0x0200, pkg_hdr, pkg_hdr + len(pkg_body), 0x7f) + name
-    pkg += struct.pack("<IIIII", pkg_hdr, 1, pkg_hdr + len(tstr), 1, 0) + pkg_body
+    pkg += struct.pack("<IIIII", pkg_hdr, len(order), pkg_hdr + len(tstr), len(keys.strings), 0) + pkg_body
 
     content = values.chunk() + pkg
     return struct.pack("<HHII", 0x0002, 12, 12 + len(content), 1) + content
@@ -192,3 +240,8 @@ if __name__ == "__main__":
     open(os.path.join(out, "AndroidManifest.xml"), "wb").write(axml(MANIFEST))
     open(os.path.join(out, ACCESSIBILITY_XML_PATH), "wb").write(axml(ACCESSIBILITY))
     open(os.path.join(out, "resources.arsc"), "wb").write(arsc())
+    for _, _, path, _, src in RESOURCES:
+        if src:
+            os.makedirs(os.path.dirname(os.path.join(out, path)), exist_ok=True)
+            with open(os.path.join(ART, src), "rb") as f:
+                open(os.path.join(out, path), "wb").write(f.read())

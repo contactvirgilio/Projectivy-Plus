@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360">
+  <defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#19C3A6"/><stop offset="1" stop-color="#6A45F0"/></linearGradient></defs>
+  <rect width="640" height="360" fill="url(#bg)"/>
+  <g transform="translate(28 52) scale(0.52)"><!-- feather: lying slightly tilted, the ground the house stands on -->
+  <g transform="rotate(-8 256 352)">
+    <path d="M86 360 C150 312 250 300 330 306 C380 310 418 322 440 338 C412 352 372 366 322 372
+             C304 374 296 370 284 376 C232 392 160 394 86 360 Z" fill="#fff"/>
+    <path d="M70 372 C130 356 250 344 438 338" fill="none" stroke="url(#bg)" stroke-width="7" stroke-linecap="round"/>
+    <path d="M70 372 L96 360" stroke="#fff" stroke-width="9" stroke-linecap="round"/>
+  </g>
+  <!-- house -->
+  <path d="M256 124 L356 208 L356 304 L156 304 L156 208 Z" fill="#fff" stroke="#fff" stroke-width="14" stroke-linejoin="round"/>
+  <rect x="235" y="244" width="42" height="60" rx="8" fill="url(#bg)"/>
+</g>
+  <text x="318" y="198" font-family="Roboto, Noto Sans, Arial, sans-serif" font-size="58" font-weight="500" fill="#fff">Lite Home</text>
+</svg>

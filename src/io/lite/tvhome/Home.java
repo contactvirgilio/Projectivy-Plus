@@ -463,11 +463,16 @@ public class Home extends Activity {
                 h.card.setBackground(bg);
                 h.banner.setVisibility(View.GONE);
                 h.fallback.setVisibility(View.VISIBLE);
-                // Android settings: just the robot, no words inside the tile.
-                h.icon.setImageDrawable(t == T_SETTINGS ? new AndroidRobot(0xFF232834) : getDrawable(SYSTEM_ICONS[t]));
+                // Lite Home and Android settings: just their icons, no words inside the tile.
+                Drawable icon;
+                if (t == T_SETTINGS) icon = new AndroidRobot(0xFF232834);
+                else if (t == T_MENU) icon = getApplicationInfo().loadIcon(getPackageManager());
+                else icon = getDrawable(SYSTEM_ICONS[t]);
+                boolean iconOnly = t == T_SETTINGS || t == T_MENU;
+                h.icon.setImageDrawable(icon);
                 h.name.setText(label);
-                h.name.setVisibility(t == T_SETTINGS ? View.GONE : View.VISIBLE);
-                sizeIcon(h, t == T_SETTINGS ? tileH * 62 / 100 : tileH / 2);
+                h.name.setVisibility(iconOnly ? View.GONE : View.VISIBLE);
+                sizeIcon(h, iconOnly ? tileH * 62 / 100 : tileH / 2);
                 h.caption.setText(label);
                 boolean locked = (t == T_SETTINGS && isLocked(Home.this, settingsPkg()))
                         || (t == T_MENU && PinPad.hasPin(prefs));
