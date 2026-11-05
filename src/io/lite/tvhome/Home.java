@@ -372,6 +372,13 @@ public class Home extends Activity {
         boolean focused;
     }
 
+    void sizeIcon(Holder h, int px) {
+        ViewGroup.LayoutParams lp = h.icon.getLayoutParams();
+        if (lp.width == px) return;
+        lp.width = lp.height = px;
+        h.icon.setLayoutParams(lp);
+    }
+
     final class TileAdapter extends BaseAdapter {
         @Override public int getCount() { return apps.size() + SYSTEM_TILES; }
         @Override public Object getItem(int p) { return p < apps.size() ? apps.get(p) : null; }
@@ -456,8 +463,11 @@ public class Home extends Activity {
                 h.card.setBackground(bg);
                 h.banner.setVisibility(View.GONE);
                 h.fallback.setVisibility(View.VISIBLE);
-                h.icon.setImageDrawable(getDrawable(SYSTEM_ICONS[t]));
+                // Android settings: just the robot, no words inside the tile.
+                h.icon.setImageDrawable(t == T_SETTINGS ? new AndroidRobot(0xFF232834) : getDrawable(SYSTEM_ICONS[t]));
                 h.name.setText(label);
+                h.name.setVisibility(t == T_SETTINGS ? View.GONE : View.VISIBLE);
+                sizeIcon(h, t == T_SETTINGS ? tileH * 62 / 100 : tileH / 2);
                 h.caption.setText(label);
                 boolean locked = (t == T_SETTINGS && isLocked(Home.this, settingsPkg()))
                         || (t == T_MENU && PinPad.hasPin(prefs));
@@ -475,6 +485,8 @@ public class Home extends Activity {
                     bg.setColor((a.tint & 0x00FFFFFF) | 0xD8000000);
                     h.icon.setImageDrawable(a.icon);
                     h.name.setText(a.label);
+                    h.name.setVisibility(View.VISIBLE);
+                    sizeIcon(h, tileH / 2);
                     h.banner.setVisibility(View.GONE);
                     h.fallback.setVisibility(View.VISIBLE);
                 }

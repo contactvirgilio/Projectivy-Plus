@@ -28,7 +28,7 @@ T_REF, T_STR, T_INT, T_HEX, T_BOOL = 0x01, 0x03, 0x10, 0x11, 0x12
 THEME_FULLSCREEN = 0x0103012a  # Theme.DeviceDefault.NoActionBar.Fullscreen
 
 PKG = "io.lite.tvhome"
-VERSION_CODE, VERSION_NAME = 10, "1.10"
+VERSION_CODE, VERSION_NAME = 11, "1.11"
 ACCESSIBILITY_XML_ID = 0x7f010000  # @xml/accessibility (package 0x7f, type 1, entry 0)
 ACCESSIBILITY_XML_PATH = "res/xml/accessibility.xml"
 

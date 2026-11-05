@@ -9,7 +9,7 @@ Not affiliated with or based on Projectivy Launcher.
 - Clock and date, then a grid of your apps (TV banners when the app has one, otherwise its icon on a tinted tile)
 - Three fixed tiles after your apps:
   - **Lite Home**: the launcher's options menu
-  - **Android settings**: opens system settings
+  - **Android settings**: opens system settings (shown as the green Android robot)
   - **Power**: system power menu (Restart / Power off), needs the Home button override
 - PIN lock: lock any app (lock badge on its tile), optionally lock Android Settings, and the Lite Home
   options themselves ask for the PIN. With the override on, locked apps also ask when opened from
