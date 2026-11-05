@@ -59,9 +59,9 @@ public class Home extends Activity {
 
     static final int COLUMNS = 5;
     // Fixed tiles after the apps.
-    static final int T_CLOSE = 0, T_MENU = 1, T_SETTINGS = 2, T_POWER = 3, SYSTEM_TILES = 4;
-    static final String[] SYSTEM_LABELS = {"Close apps", "Lite Home", "Android settings", "Power"};
-    static final int[] SYSTEM_ICONS = {android.R.drawable.ic_menu_close_clear_cancel,
+    static final int T_MENU = 0, T_SETTINGS = 1, T_POWER = 2, SYSTEM_TILES = 3;
+    static final String[] SYSTEM_LABELS = {"Lite Home", "Android settings", "Power"};
+    static final int[] SYSTEM_ICONS = {
             android.R.drawable.ic_menu_manage, android.R.drawable.ic_menu_preferences,
             android.R.drawable.ic_lock_power_off};
 
@@ -269,7 +269,6 @@ public class Home extends Activity {
             if (moving >= 0) { endMove(); return; }
             if (pos < apps.size()) { launch(apps.get(pos)); return; }
             switch (pos - apps.size()) {
-                case T_CLOSE: closeApps(); break;
                 case T_MENU: showOptions(pos); break;
                 case T_SETTINGS: openSettings(); break;
                 case T_POWER: power(); break;
@@ -633,78 +632,6 @@ public class Home extends Activity {
             if (ri != null && ri.activityInfo != null) return ri.activityInfo.packageName;
         } catch (Exception ignored) { }
         return "com.android.tv.settings";
-    }
-
-    // ---------------------------------------------------------------- close apps
-
-    void closeApps() {
-        if (HomeOverride.instance == null) {
-            dialog().setTitle("Close apps")
-                    .setMessage("Lite Home keeps track of the apps you open through its accessibility "
-                            + "service. Turn on \"Override Home button\" first.")
-                    .setPositiveButton("Set it up", new android.content.DialogInterface.OnClickListener() {
-                        @Override public void onClick(android.content.DialogInterface d, int w) { asAdmin(new Runnable() {
-                            @Override public void run() { toggleOverride(); }
-                        }); }
-                    })
-                    .setNegativeButton("Close", null)
-                    .show();
-            return;
-        }
-        final List<String> pkgs = RunningApps.list(this);
-        if (pkgs.isEmpty()) {
-            Toast.makeText(this, "No user apps opened since the TV started", Toast.LENGTH_SHORT).show();
-            return;
-        }
-        PackageManager pm = getPackageManager();
-        String[] labels = new String[pkgs.size()];
-        final boolean[] checked = new boolean[pkgs.size()];
-        for (int i = 0; i < pkgs.size(); i++) {
-            String l = pkgs.get(i);
-            try { l = pm.getApplicationLabel(pm.getApplicationInfo(l, 0)).toString(); } catch (Exception ignored) { }
-            labels[i] = l;
-            checked[i] = true;
-        }
-        dialog().setTitle("Close apps")
-                .setMultiChoiceItems(labels, checked, new android.content.DialogInterface.OnMultiChoiceClickListener() {
-                    @Override public void onClick(android.content.DialogInterface d, int which, boolean on) { checked[which] = on; }
-                })
-                .setPositiveButton("Close selected", new android.content.DialogInterface.OnClickListener() {
-                    @Override public void onClick(android.content.DialogInterface d, int w) {
-                        List<String> sel = new ArrayList<>();
-                        for (int i = 0; i < pkgs.size(); i++) if (checked[i]) sel.add(pkgs.get(i));
-                        kill(sel);
-                    }
-                })
-                .setNegativeButton("Cancel", null)
-                .show();
-    }
-
-    void kill(List<String> pkgs) {
-        if (pkgs.isEmpty()) return;
-        if (android.os.Build.VERSION.SDK_INT >= 34) {
-            // Android 14+ only lets apps stop their own processes: the service presses
-            // Force stop in App info for each one instead.
-            HomeOverride svc = HomeOverride.instance;
-            if (svc != null) { svc.forceStop(pkgs); return; }
-            String pkg = pkgs.get(0);
-            RunningApps.forget(this, pkg);
-            Toast.makeText(this, "Android 14 blocks this. Press Force stop", Toast.LENGTH_LONG).show();
-            startSystem(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", pkg, null)));
-            return;
-        }
-        android.app.ActivityManager am = (android.app.ActivityManager) getSystemService(ACTIVITY_SERVICE);
-        int n = 0;
-        for (String pkg : pkgs) {
-            try {
-                am.killBackgroundProcesses(pkg);
-                RunningApps.forget(this, pkg);
-                n++;
-            } catch (Exception e) {
-                android.util.Log.w("LiteHome", "could not close " + pkg, e);
-            }
-        }
-        Toast.makeText(this, "Closed " + n + (n == 1 ? " app" : " apps"), Toast.LENGTH_SHORT).show();
     }
 
     // ---------------------------------------------------------------- power
