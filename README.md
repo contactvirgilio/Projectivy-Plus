@@ -8,7 +8,7 @@ Not affiliated with or based on Projectivy Launcher.
   or "Cycle through all", with Motion (Still/Slow/Normal/Fast) and Brightness (Dim/Normal/Bright). Choices preview live.
 - Clock and date, then a grid of your apps (TV banners when the app has one, otherwise its icon on a tinted tile)
 - Three fixed tiles after your apps:
-  - **Lite Home**: the launcher's options menu (shown as the app icon)
+  - **Lite Home**: the launcher's options menu (shown as a cog)
   - **Android settings**: opens system settings (shown as the green Android robot)
   - **Power**: system power menu (Restart / Power off), needs the Home button override
 - PIN lock: lock any app (lock badge on its tile), optionally lock Android Settings, and the Lite Home

@@ -463,10 +463,10 @@ public class Home extends Activity {
                 h.card.setBackground(bg);
                 h.banner.setVisibility(View.GONE);
                 h.fallback.setVisibility(View.VISIBLE);
-                // Lite Home and Android settings: just their icons, no words inside the tile.
+                // Lite Home (cog) and Android settings (robot): just the icon, no words inside the tile.
                 Drawable icon;
                 if (t == T_SETTINGS) icon = new AndroidRobot(0xFF232834);
-                else if (t == T_MENU) icon = getApplicationInfo().loadIcon(getPackageManager());
+                else if (t == T_MENU) icon = new CogIcon(0xFFE6E9F0, 0xFF232834);
                 else icon = getDrawable(SYSTEM_ICONS[t]);
                 boolean iconOnly = t == T_SETTINGS || t == T_MENU;
                 h.icon.setImageDrawable(icon);
