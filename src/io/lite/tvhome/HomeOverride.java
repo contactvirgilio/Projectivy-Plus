@@ -18,7 +18,8 @@ import java.util.Set;
 /**
  * "Override current launcher": when any other Home screen comes to the front
  * (stock launcher, Projectivy...), open Lite Home in its place.
- * Only listens for window changes; reads no screen content.
+ * Also: app lock, the Close apps list, and (Android 14+) pressing Force stop in App info.
+ * Screen content is only read on the App info screen while Close apps is running.
  */
 public class HomeOverride extends AccessibilityService {
 
@@ -58,6 +59,7 @@ public class HomeOverride extends AccessibilityService {
     @Override
     protected boolean onKeyEvent(KeyEvent e) {
         if (e.getKeyCode() != KeyEvent.KEYCODE_HOME) return false;
+        if (stopper != null && stopper.active) return false; // leave Home alone mid-routine
         if (e.getAction() == KeyEvent.ACTION_UP && !e.isCanceled()) openLiteHome();
         return true; // swallow both down and up so the old launcher never opens
     }
@@ -124,6 +126,14 @@ public class HomeOverride extends AccessibilityService {
         if (!homeClasses.contains(cls)) return;
         Log.i("LiteHome", "launcher window seen: " + pkg + "/" + cls);
         openLiteHome();
+    }
+
+    ForceStopper stopper;
+
+    /** Android 14+: force-stops the given apps through App info. */
+    void forceStop(List<String> pkgs) {
+        if (stopper == null) stopper = new ForceStopper(this);
+        stopper.start(pkgs);
     }
 
     /** Opens the system power menu (Restart / Power off). */

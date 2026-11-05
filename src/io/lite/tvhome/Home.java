@@ -683,7 +683,10 @@ public class Home extends Activity {
     void kill(List<String> pkgs) {
         if (pkgs.isEmpty()) return;
         if (android.os.Build.VERSION.SDK_INT >= 34) {
-            // Android 14+ only lets apps stop their own processes: hand over to App info.
+            // Android 14+ only lets apps stop their own processes: the service presses
+            // Force stop in App info for each one instead.
+            HomeOverride svc = HomeOverride.instance;
+            if (svc != null) { svc.forceStop(pkgs); return; }
             String pkg = pkgs.get(0);
             RunningApps.forget(this, pkg);
             Toast.makeText(this, "Android 14 blocks this. Press Force stop", Toast.LENGTH_LONG).show();

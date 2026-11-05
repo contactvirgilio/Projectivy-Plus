@@ -10,7 +10,9 @@ Not affiliated with or based on Projectivy Launcher.
 - Four fixed tiles after your apps:
   - **Close apps**: lists the user-installed apps you opened since the TV started (tracked by the
     accessibility service) and closes the ones you tick. Uses `killBackgroundProcesses`, so apps
-    playing in the background (foreground service) may survive; on Android 14+ it opens App info instead.
+    playing in the background (foreground service) may survive. On Android 14+, where apps may no
+    longer close other apps, the service opens each app's App info and presses Force stop + OK for you
+    (labels read from the Settings app, so any language works).
   - **Lite Home**: the launcher's options menu
   - **Android settings**: opens system settings
   - **Power**: system power menu (Restart / Power off), needs the Home button override
