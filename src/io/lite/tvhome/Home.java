@@ -84,8 +84,13 @@ public class Home extends Activity {
         boolean leanback;
         Drawable banner;
         Drawable icon;
-        int tint = 0xFF2A2F3A;
+        int tint = 0xFF2A2F3A;  // dark tile colour for Regular icon tiles
+        int vivid = 0xFF6B7280; // the app's own colour, for Tinted glass
     }
+
+    static final String[] TILE_STYLES = {"Regular", "Glass", "Tinted glass"};
+
+    int tileStyle() { return prefs.getInt("tile_style", 0); }
 
     final Handler ui = new Handler(Looper.getMainLooper());
     final List<App> apps = new ArrayList<>();
@@ -353,8 +358,10 @@ public class Home extends Activity {
         } else if (focusedHolder == h) {
             focusedHolder = null;
         }
-        h.caption.setTextColor(focused ? Color.WHITE : 0x00FFFFFF);
-        h.caption.setShadowLayer(focused ? dp(4) : 0, 0, focused ? dp(1) : 0, focused ? 0xAA000000 : 0);
+        // Glass app tiles already show their name, so no caption underneath.
+        boolean cap = focused && !(h.isApp && tileStyle() > 0);
+        h.caption.setTextColor(cap ? Color.WHITE : 0x00FFFFFF);
+        h.caption.setShadowLayer(cap ? dp(4) : 0, 0, cap ? dp(1) : 0, cap ? 0xAA000000 : 0);
     }
 
 
@@ -368,8 +375,26 @@ public class Home extends Activity {
         ImageView icon;
         TextView name;
         TextView caption;
+        TextView label;     // Glass styles: the app name on the tile
+        boolean isApp;
         ImageView lock;
         boolean focused;
+    }
+
+    /** Semi-transparent tile; with a tint colour it gets a faint wash of that colour. */
+    GradientDrawable glassBg(int tint) {
+        GradientDrawable g;
+        if (tint == 0) {
+            g = new GradientDrawable();
+            g.setColor(0x17FFFFFF);
+        } else {
+            int rgb = tint & 0x00FFFFFF;
+            g = new GradientDrawable(GradientDrawable.Orientation.TL_BR,
+                    new int[]{0x59000000 | rgb, 0x24000000 | rgb});
+        }
+        g.setCornerRadius(dp(10));
+        g.setStroke(Math.max(1, dp(1)), 0x29FFFFFF);
+        return g;
     }
 
     void sizeIcon(Holder h, int px) {
@@ -430,6 +455,17 @@ public class Home extends Activity {
                 h.fallback.addView(h.name, new LinearLayout.LayoutParams(-1, -2));
                 h.card.addView(h.fallback, new FrameLayout.LayoutParams(-1, -1));
 
+                h.label = new TextView(Home.this);
+                h.label.setTextColor(Color.WHITE);
+                h.label.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
+                h.label.setGravity(Gravity.CENTER);
+                h.label.setMaxLines(2);
+                h.label.setEllipsize(android.text.TextUtils.TruncateAt.END);
+                h.label.setPadding(dp(10), 0, dp(10), 0);
+                h.label.setShadowLayer(dp(6), 0, dp(1), 0x59000000);
+                h.label.setVisibility(View.GONE);
+                h.card.addView(h.label, new FrameLayout.LayoutParams(-1, -1));
+
                 h.lock = new ImageView(Home.this);
                 h.lock.setImageDrawable(getDrawable(android.R.drawable.ic_lock_lock));
                 GradientDrawable badge = new GradientDrawable();
@@ -454,12 +490,15 @@ public class Home extends Activity {
                 h = (Holder) convert.getTag();
             }
 
+            int style = tileStyle();
             GradientDrawable bg = new GradientDrawable();
             bg.setCornerRadius(dp(10));
             if (pos >= apps.size()) {
                 int t = pos - apps.size();
                 String label = SYSTEM_LABELS[t];
-                bg.setColor(0xC8232834);
+                h.isApp = false;
+                h.label.setVisibility(View.GONE);
+                if (style > 0) bg = glassBg(0); else bg.setColor(0xC8232834);
                 h.card.setBackground(bg);
                 h.banner.setVisibility(View.GONE);
                 h.fallback.setVisibility(View.VISIBLE);
@@ -479,9 +518,17 @@ public class Home extends Activity {
                 h.lock.setVisibility(locked ? View.VISIBLE : View.GONE);
             } else {
                 App a = apps.get(pos);
+                h.isApp = true;
                 h.lock.setVisibility(isLocked(Home.this, a.pkg) ? View.VISIBLE : View.GONE);
                 h.caption.setText(a.label);
-                if (a.banner != null) {
+                h.label.setVisibility(style > 0 ? View.VISIBLE : View.GONE);
+                if (style > 0) {
+                    // Glass / Tinted glass: see-through tile with just the name.
+                    bg = glassBg(style == 2 ? a.vivid : 0);
+                    h.label.setText(a.label);
+                    h.banner.setVisibility(View.GONE);
+                    h.fallback.setVisibility(View.GONE);
+                } else if (a.banner != null) {
                     bg.setColor(0xFF000000);
                     h.banner.setImageDrawable(a.banner);
                     h.banner.setVisibility(View.VISIBLE);
@@ -571,7 +618,43 @@ public class Home extends Activity {
                 try { a.icon = ri.loadIcon(pm); } catch (Exception ignored) { }
                 a.tint = tintFor(a.icon);
             }
+            a.vivid = vividFor(a.banner != null ? a.banner : a.icon);
             into.put(a.pkg, a);
+        }
+    }
+
+    /** The app's main colour (average of its colourful pixels), brightened, for Tinted glass. */
+    static int vividFor(Drawable d) {
+        if (d == null) return 0xFF6B7280;
+        try {
+            int n = 16;
+            Bitmap bm = Bitmap.createBitmap(n, n, Bitmap.Config.ARGB_8888);
+            Canvas c = new Canvas(bm);
+            d.setBounds(0, 0, n, n);
+            d.draw(c);
+            float[] hsv = new float[3];
+            double r = 0, g = 0, b = 0, w = 0, ar = 0, ag = 0, ab = 0, an = 0;
+            for (int y = 0; y < n; y++)
+                for (int x = 0; x < n; x++) {
+                    int px = bm.getPixel(x, y);
+                    if (Color.alpha(px) < 128) continue;
+                    ar += Color.red(px); ag += Color.green(px); ab += Color.blue(px); an++;
+                    Color.colorToHSV(px, hsv);
+                    if (hsv[1] < 0.3f || hsv[2] < 0.25f) continue;   // skip greys, whites, blacks
+                    r += Color.red(px) * hsv[1]; g += Color.green(px) * hsv[1]; b += Color.blue(px) * hsv[1];
+                    w += hsv[1];
+                }
+            bm.recycle();
+            int col;
+            if (w > 0) col = Color.rgb((int) (r / w), (int) (g / w), (int) (b / w));
+            else if (an > 0) col = Color.rgb((int) (ar / an), (int) (ag / an), (int) (ab / an));
+            else return 0xFF6B7280;
+            Color.colorToHSV(col, hsv);
+            if (hsv[1] > 0.12f) hsv[1] = Math.max(hsv[1], 0.55f);
+            hsv[2] = 0.82f;
+            return Color.HSVToColor(hsv);
+        } catch (Exception e) {
+            return 0xFF6B7280;
         }
     }
 
@@ -829,6 +912,7 @@ public class Home extends Activity {
     void applyBackground() {
         bg.configure(prefs.getInt("bg_palette", 0), prefs.getInt("bg_speed", 1), prefs.getInt("bg_bright", 1));
         bg.start();
+        adapter.notifyDataSetChanged();
         refreshFocus();
     }
 
@@ -894,6 +978,8 @@ public class Home extends Activity {
         acts.add(new Runnable() { public void run() { pickSetting("Brightness", FlowBackground.BRIGHT_NAMES, "bg_bright", 1); } });
         items.add("Highlight: " + ACCENT_NAMES[Math.min(prefs.getInt("accent", 0), ACCENT_NAMES.length - 1)]);
         acts.add(new Runnable() { public void run() { pickSetting("Highlight colour", ACCENT_NAMES, "accent", 0); } });
+        items.add("Tile style: " + TILE_STYLES[Math.min(tileStyle(), TILE_STYLES.length - 1)]);
+        acts.add(new Runnable() { public void run() { pickSetting("Tile style", TILE_STYLES, "tile_style", 0); } });
         items.add(pin ? "Change PIN" : "Set up PIN lock");
         acts.add(new Runnable() { public void run() { setUpPin(null); } });
         if (pin) {

@@ -29,7 +29,7 @@ T_REF, T_STR, T_INT, T_HEX, T_BOOL = 0x01, 0x03, 0x10, 0x11, 0x12
 THEME_FULLSCREEN = 0x0103012a  # Theme.DeviceDefault.NoActionBar.Fullscreen
 
 PKG = "io.lite.tvhome"
-VERSION_CODE, VERSION_NAME = 13, "1.13"
+VERSION_CODE, VERSION_NAME = 14, "1.14"
 ACCESSIBILITY_XML_PATH = "res/xml/accessibility.xml"
 ART = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "art")
 
