@@ -17,6 +17,7 @@ Not affiliated with or based on Projectivy Launcher.
 - Tile style: **Regular** (app banners/icons), **Glass** (see-through tiles with just the app name) or
   **Tinted glass** (the same, washed with each app's own colour, taken from its icon). The Lite Home,
   Android settings and Power tiles keep their icons in every style.
+- Highlight style: **Glow** (pulsing ring) or **Zoom** (the tile grows, lifts and brightens; no ring)
 - Highlight colour: match the background theme, or Amber, Cyan, Lime, Pink, Violet, Red
 - Long-press OK (or Menu) on an app: Open, Move, Move to first, Hide, Lock with PIN, App info, Uninstall
 - Lite Home tile (or long-press any fixed tile): Android settings, Background, Motion, Brightness, Highlight,

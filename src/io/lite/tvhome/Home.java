@@ -89,6 +89,9 @@ public class Home extends Activity {
     }
 
     static final String[] TILE_STYLES = {"Regular", "Glass", "Tinted glass"};
+    static final String[] FOCUS_STYLES = {"Glow", "Zoom"};
+
+    boolean zoomFocus() { return prefs.getInt("focus_style", 0) == 1; }
 
     int tileStyle() { return prefs.getInt("tile_style", 0); }
 
@@ -339,9 +342,11 @@ public class Home extends Activity {
     }
 
     void applyFocus(Holder h, boolean focused, boolean animate) {
-        float s = focused ? 1.08f : 1f;
+        boolean zoom = zoomFocus();
+        float s = focused ? (zoom ? 1.15f : 1.08f) : 1f;
         if (animate && h.focused != focused) {
-            h.wrap.animate().scaleX(s).scaleY(s).setDuration(140).start();
+            h.wrap.animate().scaleX(s).scaleY(s).setDuration(zoom ? 170 : 140)
+                    .setInterpolator(new android.view.animation.DecelerateInterpolator()).start();
         } else {
             h.wrap.animate().cancel();
             h.wrap.setScaleX(s);
@@ -350,7 +355,21 @@ public class Home extends Activity {
         h.focused = focused;
         // While moving a tile the ring turns white so the mode is obvious.
         h.ring.setColor(moving >= 0 ? Color.WHITE : accent());
-        h.glow.setVisibility(focused ? View.VISIBLE : View.INVISIBLE);
+        // Zoom: no ring (except while moving a tile); the tile lifts and brightens instead.
+        h.glow.setVisibility(focused && (!zoom || moving >= 0) ? View.VISIBLE : View.INVISIBLE);
+        boolean lift = focused && zoom;
+        boolean glassTile = tileStyle() > 0;
+        if (lift) {
+            GradientDrawable f = new GradientDrawable();
+            f.setCornerRadius(dp(10));
+            f.setColor(glassTile ? 0x1EFFFFFF : 0x14FFFFFF);
+            if (glassTile) f.setStroke(Math.max(1, dp(1)), 0x30FFFFFF);
+            h.card.setForeground(f);
+        } else {
+            h.card.setForeground(null);
+        }
+        // A shadow under see-through glass would just darken it, so only solid tiles get one.
+        h.card.setElevation(lift && !glassTile ? dp(10) : 0);
         if (focused) {
             if (focusedHolder != null && focusedHolder != h) focusedHolder.glow.setVisibility(View.INVISIBLE);
             focusedHolder = h;
@@ -976,7 +995,9 @@ public class Home extends Activity {
         acts.add(new Runnable() { public void run() { pickSetting("Motion", FlowBackground.SPEED_NAMES, "bg_speed", 1); } });
         items.add("Brightness: " + FlowBackground.BRIGHT_NAMES[prefs.getInt("bg_bright", 1)]);
         acts.add(new Runnable() { public void run() { pickSetting("Brightness", FlowBackground.BRIGHT_NAMES, "bg_bright", 1); } });
-        items.add("Highlight: " + ACCENT_NAMES[Math.min(prefs.getInt("accent", 0), ACCENT_NAMES.length - 1)]);
+        items.add("Highlight style: " + FOCUS_STYLES[Math.min(prefs.getInt("focus_style", 0), FOCUS_STYLES.length - 1)]);
+        acts.add(new Runnable() { public void run() { pickSetting("Highlight style", FOCUS_STYLES, "focus_style", 0); } });
+        items.add("Highlight colour: " + ACCENT_NAMES[Math.min(prefs.getInt("accent", 0), ACCENT_NAMES.length - 1)]);
         acts.add(new Runnable() { public void run() { pickSetting("Highlight colour", ACCENT_NAMES, "accent", 0); } });
         items.add("Tile style: " + TILE_STYLES[Math.min(tileStyle(), TILE_STYLES.length - 1)]);
         acts.add(new Runnable() { public void run() { pickSetting("Tile style", TILE_STYLES, "tile_style", 0); } });
